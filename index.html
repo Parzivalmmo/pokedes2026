@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PokeMMO Pokedex02</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: #121212;
+            color: #ffffff;
+            padding: 15px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        header h1 {
+            color: #ffcb05;
+            text-shadow: 1px 1px #3b4cca;
+            font-size: 1.8rem;
+            margin-bottom: 5px;
+        }
+
+        .stats {
+            font-size: 1rem;
+            color: #aaa;
+            margin-bottom: 15px;
+        }
+
+        /* Contenedor del Buscador */
+        .search-container {
+            max-width: 400px;
+            margin: 0 auto 20px auto;
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 10px 40px 10px 15px;
+            font-size: 1rem;
+            background-color: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 20px;
+            color: #fff;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .search-input:focus {
+            border-color: #ffcb05;
+            box-shadow: 0 0 8px rgba(255, 203, 5, 0.2);
+        }
+
+        .clear-btn {
+            position: absolute;
+            right: 15px;
+            background: none;
+            border: none;
+            color: #777;
+            font-size: 1.2rem;
+            cursor: pointer;
+            display: none;
+        }
+
+        .clear-btn:hover {
+            color: #fff;
+        }
+
+        /* Grid compacta */
+        .pokedex-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+            gap: 8px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* Tarjetas optimizadas */
+        .pokemon-card {
+            background-color: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 8px 4px;
+            text-align: center;
+            cursor: pointer;
+            transition: transform 0.15s, border-color 0.15s, background-color 0.15s;
+            user-select: none;
+            position: relative;
+            opacity: 0.4;
+            filter: grayscale(100%);
+        }
+
+        .pokemon-card.hidden {
+            display: none;
+        }
+
+        .pokemon-card:hover {
+            transform: scale(1.05);
+            border-color: #ffcb05;
+            z-index: 2;
+        }
+
+        .pokemon-img {
+            width: 64px;
+            height: 64px;
+            image-rendering: pixelated; 
+            display: block;
+            margin: 0 auto;
+        }
+
+        .pokemon-id {
+            font-size: 0.75rem;
+            color: #777;
+            margin-bottom: 2px;
+        }
+
+        .pokemon-name {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: capitalize;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding: 0 2px;
+        }
+
+        /* Estado: CAPTURADO */
+        .pokemon-card.captured {
+            opacity: 1;
+            filter: grayscale(0%);
+            border-color: #2e7d32;
+            background-color: #1b3a1e;
+        }
+
+        .pokemon-card.captured::after {
+            content: "✓";
+            position: absolute;
+            top: 2px;
+            right: 5px;
+            color: #81c784;
+            font-weight: bold;
+            font-size: 0.75rem;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Pokédex de Captura (Sin Legendarios)</h1>
+        <div class="stats">
+            Capturados: <span id="captured-count">0</span> / <span id="total-count">0</span>
+        </div>
+        
+        <div class="search-container">
+            <input type="text" id="search-box" class="search-input" placeholder="Buscar por nombre o número..." autocomplete="off">
+            <button id="clear-search" class="clear-btn">&times;</button>
+        </div>
+    </header>
+
+    <div class="pokedex-grid" id="pokedex"></div>
+
+    <script>
+        const pokedexContainer = document.getElementById('pokedex');
+        const capturedCountEl = document.getElementById('captured-count');
+        const totalCountEl = document.getElementById('total-count');
+        const searchBox = document.getElementById('search-box');
+        const clearSearchBtn = document.getElementById('clear-search');
+
+        const MAX_POKEMON_ID = 649; // Rango de IDs hasta Teselia
+
+        // Set de IDs de Legendarios y Singulares de Gen 1 a 5 para excluirlos eficientemente
+        const legendaryIds = new Set([
+            // Gen 1
+            144, 145, 146, 150, 151,
+            // Gen 2
+            243, 244, 245, 249, 250, 251,
+            // Gen 3
+            377, 378, 379, 380, 381, 382, 383, 384, 385, 386,
+            // Gen 4
+            480, 481, 482, 483, 484, 485, 486, 487, 488, 489, 490, 491, 492, 493,
+            // Gen 5
+            494, 638, 639, 640, 641, 642, 643, 644, 645, 646, 647, 648, 649
+        ]);
+
+        // Calcular el total real restando los legendarios
+        const TOTAL_VALID_POKEMON = MAX_POKEMON_ID - legendaryIds.size;
+
+        let capturedPokemon = JSON.parse(localStorage.getItem('capturedPokemon')) || [];
+
+        // Nombres base rápidos
+        const pokemonNames = {
+            1: "Bulbasaur", 2: "Ivysaur", 3: "Venusaur", 4: "Charmander", 5: "Charmeleon", 6: "Charizard",
+            7: "Squirtle", 8: "Wartortle", 9: "Blastoise", 25: "Pikachu", 133: "Eevee"
+        };
+
+        // Mapeo para saber en qué posición del DOM quedó cada ID real tras la exclusión
+        const idToDOMIndex = {};
+
+        function initPokedex() {
+            totalCountEl.textContent = TOTAL_VALID_POKEMON;
+            updateStats();
+
+            const fragment = document.createDocumentFragment();
+            let currentDOMIndex = 0;
+
+            for (let i = 1; i <= MAX_POKEMON_ID; i++) {
+                // Si el ID pertenece a un legendario, lo ignoramos por completo
+                if (legendaryIds.has(i)) continue;
+
+                const card = document.createElement('div');
+                card.classList.add('pokemon-card');
+                
+                card.dataset.id = i;
+                card.dataset.formattedId = String(i).padStart(3, '0');
+
+                if (capturedPokemon.includes(i)) card.classList.add('captured');
+
+                const name = pokemonNames[i] || `Nº ${card.dataset.formattedId}`;
+                card.dataset.name = name.toLowerCase();
+
+                const imageUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${i}.png`;
+
+                card.innerHTML = `
+                    <div class="pokemon-id">#${card.dataset.formattedId}</div>
+                    <img class="pokemon-img" src="${imageUrl}" alt="${name}" loading="lazy">
+                    <div class="pokemon-name" id="name-${i}">${name}</div>
+                `;
+
+                card.addEventListener('click', () => toggleCapture(i, card));
+                fragment.appendChild(card);
+
+                // Guardamos el índice correspondiente para la actualización en segundo plano
+                idToDOMIndex[i] = currentDOMIndex;
+                currentDOMIndex++;
+            }
+
+            pokedexContainer.appendChild(fragment);
+
+            searchBox.addEventListener('input', filterPokemon);
+            clearSearchBtn.addEventListener('click', clearSearch);
+
+            optimizeNamesInBackground();
+        }
+
+        async function optimizeNamesInBackground() {
+            try {
+                const res = await fetch('https://pokeapi.co/api/v2/pokemon?limit=649');
+                const data = await res.json();
+                data.results.forEach((p, index) => {
+                    const id = index + 1;
+                    
+                    // Saltamos los legendarios también en la optimización de nombres
+                    if (legendaryIds.has(id)) return;
+
+                    const el = document.getElementById(`name-${id}`);
+                    const domIndex = idToDOMIndex[id];
+                    const card = pokedexContainer.children[domIndex];
+                    
+                    if (el) {
+                        if (el.textContent.startsWith('Nº')) {
+                            el.textContent = p.name;
+                        }
+                        if (card) {
+                            card.dataset.name = p.name.toLowerCase();
+                        }
+                    }
+                });
+                
+                if (searchBox.value.trim() !== "") {
+                    filterPokemon();
+                }
+            } catch (e) {
+                // Failsafe
+            }
+        }
+
+        function filterPokemon() {
+            const query = searchBox.value.toLowerCase().trim();
+            const cards = pokedexContainer.getElementsByClassName('pokemon-card');
+            
+            clearSearchBtn.style.display = query.length > 0 ? 'block' : 'none';
+
+            for (let card of cards) {
+                const name = card.dataset.name;
+                const id = card.dataset.id;
+                const formattedId = card.dataset.formattedId;
+
+                if (name.includes(query) || id === query || formattedId.includes(query)) {
+                    card.classList.remove('hidden');
+                } else {
+                    card.classList.add('hidden');
+                }
+            }
+        }
+
+        function clearSearch() {
+            searchBox.value = '';
+            clearSearchBtn.style.display = 'none';
+            searchBox.focus();
+            
+            const cards = pokedexContainer.getElementsByClassName('pokemon-card');
+            for (let card of cards) {
+                card.classList.remove('hidden');
+            }
+        }
+
+        function toggleCapture(id, cardElement) {
+            if (capturedPokemon.includes(id)) {
+                capturedPokemon = capturedPokemon.filter(pId => pId !== id);
+                cardElement.classList.remove('captured');
+            } else {
+                capturedPokemon.push(id);
+                cardElement.classList.add('captured');
+            }
+            localStorage.setItem('capturedPokemon', JSON.stringify(capturedPokemon));
+            updateStats();
+        }
+
+        function updateStats() {
+            // Filtrar del localStorage los que puedan ser legendarios por si acaso quedaron guardados antes
+            capturedPokemon = capturedPokemon.filter(id => !legendaryIds.has(id));
+            capturedCountEl.textContent = capturedPokemon.length;
+        }
+
+        initPokedex();
+    </script>
+</body>
+</html>
